@@ -1,9 +1,11 @@
 package reversi.games.reversi;
 
-import reversi.core.Game;
-import reversi.core.GameMode;
+import reversi.games.reversi.ReversiGame;
+import reversi.core.model.GameMode;
 import reversi.core.GameSession;
-import reversi.core.Position;
+import reversi.core.PassableSession;
+import reversi.core.model.Position;
+import reversi.core.PositionMoveSession;
 import reversi.gamehall.DemoScript;
 import reversi.gamehall.GamePlugin;
 
@@ -33,21 +35,23 @@ public final class ReversiGamePlugin implements GamePlugin {
 
     @Override
     public GameSession createGame(int boardSize) {
-        return Game.newGame(boardSize);
+        return ReversiGame.newGame(boardSize);
     }
 
     @Override
     public DemoScript createDemoScript(GameSession game) {
-        return new ReversiDemoScript(game);
+        return new ReversiDemoScript((PositionMoveSession) game, (PassableSession) game);
     }
 
     private static final class ReversiDemoScript implements DemoScript {
-        private final GameSession game;
+        private final PositionMoveSession game;
+        private final PassableSession passable;
         private final List<Position> preferredMoves;
         private int index;
 
-        private ReversiDemoScript(GameSession game) {
+        private ReversiDemoScript(PositionMoveSession game, PassableSession passable) {
             this.game = game;
+            this.passable = passable;
             this.preferredMoves = List.of(
                 new Position(2, 3),
                 new Position(2, 2),
@@ -68,7 +72,7 @@ public final class ReversiGamePlugin implements GamePlugin {
             }
             Set<Position> legal = game.validMoves();
             if (legal.isEmpty()) {
-                game.tryPass();
+                passable.tryPass();
                 return "Reversi demo: pass";
             }
 

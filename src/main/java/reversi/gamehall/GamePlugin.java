@@ -1,6 +1,6 @@
 package reversi.gamehall;
 
-import reversi.core.GameMode;
+import reversi.core.model.GameMode;
 import reversi.core.GameSession;
 
 import java.util.List;
@@ -18,8 +18,5 @@ public interface GamePlugin {
 
     default DemoScript createDemoScript(GameSession game) {
         return () -> displayName() + " demo idle";
-    }
-
-    default void updateDemo() {
     }
 }

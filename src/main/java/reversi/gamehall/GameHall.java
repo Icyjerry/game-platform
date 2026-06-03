@@ -1,7 +1,5 @@
 package reversi.gamehall;
 
-import reversi.core.MultiGameManager;
-
 import java.util.Objects;
 
 public final class GameHall {

@@ -1,22 +1,18 @@
 package reversi;
 
 import reversi.gamehall.GameHall;
-import reversi.ui.JavaFxUi;
-import reversi.ui.LanternaUi;
+import reversi.gamehall.UiPlugin;
+import reversi.gamehall.UiRegistry;
 
 public final class App {
     public static void main(String[] args) throws Exception {
         int boardSize = normalizeBoardSize(Args.parseBoardSize(args).orElse(8));
-        Args.UiType uiType = Args.parseUiType(args);
+        String uiName = Args.parseUiName(args);
 
         GameHall hall = GameHall.newHall(boardSize);
 
-        if (uiType == Args.UiType.LANTERNA) {
-            LanternaUi ui = new LanternaUi();
-            ui.runMulti(hall.manager());
-        } else {
-            JavaFxUi.launchApp(boardSize);
-        }
+        UiPlugin ui = UiRegistry.discover(uiName);
+        ui.launch(hall);
     }
 
     private static int normalizeBoardSize(int requested) {

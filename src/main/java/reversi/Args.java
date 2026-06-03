@@ -3,10 +3,6 @@ package reversi;
 import java.util.Optional;
 
 public final class Args {
-    public enum UiType {
-        JAVAFX, LANTERNA
-    }
-
     private Args() {
     }
 
@@ -50,9 +46,9 @@ public final class Args {
         return Optional.empty();
     }
 
-    public static UiType parseUiType(String[] args) {
+    public static String parseUiName(String[] args) {
         if (args == null || args.length == 0) {
-            return UiType.JAVAFX;
+            return "javafx";
         }
 
         for (String arg : args) {
@@ -62,29 +58,17 @@ public final class Args {
 
             String trimmed = arg.trim().toLowerCase();
             if (trimmed.startsWith("--ui=")) {
-                String value = trimmed.substring("--ui=".length());
-                if ("lanterna".equals(value)) {
-                    return UiType.LANTERNA;
-                }
-                if ("javafx".equals(value)) {
-                    return UiType.JAVAFX;
-                }
+                return trimmed.substring("--ui=".length());
             }
         }
 
         for (int i = 0; i < args.length - 1; i++) {
             if ("--ui".equals(args[i].trim().toLowerCase())) {
-                String value = args[i + 1].trim().toLowerCase();
-                if ("lanterna".equals(value)) {
-                    return UiType.LANTERNA;
-                }
-                if ("javafx".equals(value)) {
-                    return UiType.JAVAFX;
-                }
+                return args[i + 1].trim().toLowerCase();
             }
         }
 
-        return UiType.JAVAFX;
+        return "javafx";
     }
 
     private static Optional<Integer> parsePositiveInt(String s) {

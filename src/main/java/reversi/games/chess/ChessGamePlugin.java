@@ -1,11 +1,12 @@
 package reversi.games.chess;
 
-import reversi.core.ActionResult;
-import reversi.core.ChessGame;
-import reversi.core.Disc;
-import reversi.core.GameMode;
+import reversi.core.model.ActionResult;
+import reversi.games.chess.ChessGame;
+import reversi.games.chess.ChessSession;
+import reversi.core.model.Disc;
+import reversi.core.model.GameMode;
 import reversi.core.GameSession;
-import reversi.core.Position;
+import reversi.core.model.Position;
 import reversi.gamehall.DemoScript;
 import reversi.gamehall.GamePlugin;
 
@@ -39,15 +40,15 @@ public final class ChessGamePlugin implements GamePlugin {
 
     @Override
     public DemoScript createDemoScript(GameSession game) {
-        return new ChessDemoScript((ChessGame) game);
+        return new ChessDemoScript((ChessSession) game);
     }
 
     private static final class ChessDemoScript implements DemoScript {
-        private final ChessGame game;
+        private final ChessSession game;
         private final List<ChessMove> moves;
         private int index;
 
-        private ChessDemoScript(ChessGame game) {
+        private ChessDemoScript(ChessSession game) {
             this.game = game;
             this.moves = List.of(
                 move("7e", "5e"),    // 1. e4 (Pawn)

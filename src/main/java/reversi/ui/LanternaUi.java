@@ -11,31 +11,34 @@ import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
 import reversi.command.CommandParser;
 import reversi.command.CommandType;
 import reversi.command.ParsedCommand;
-import reversi.core.ActionResult;
-import reversi.core.ChessGame;
-import reversi.core.Disc;
-import reversi.core.GameMode;
+import reversi.core.BoardGameSession;
+import reversi.games.chess.ChessSession;
+import reversi.core.model.Disc;
+import reversi.core.model.GameMode;
 import reversi.core.GameSession;
-import reversi.core.MinesweeperGame;
-import reversi.core.MultiGameManager;
-import reversi.core.Position;
+import reversi.games.minesweeper.MinesweeperSession;
+import reversi.gamehall.MultiGameManager;
+import reversi.core.PassableSession;
+import reversi.core.model.Position;
 import reversi.gamehall.DemoController;
+import reversi.gamehall.GameController;
+import reversi.gamehall.GameHall;
 import reversi.gamehall.GamePlugin;
-import reversi.gamehall.GameRegistry;
+import reversi.gamehall.GameStatusPresenter;
+import reversi.gamehall.UiPlugin;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-public final class LanternaUi {
+public final class LanternaUi implements UiPlugin {
     private static final TextColor FG = TextColor.ANSI.WHITE;
     private static final TextColor HIGHLIGHT = TextColor.ANSI.CYAN;
     private static final TextColor WARNING = TextColor.ANSI.YELLOW;
     private static final TextColor MUTED = TextColor.ANSI.WHITE_BRIGHT;
     private static final TextColor COORD = TextColor.ANSI.BLACK_BRIGHT;
-    private static final TextColor BLACK_PIECE = TextColor.ANSI.YELLOW_BRIGHT;
-    private static final TextColor WHITE_PIECE = TextColor.ANSI.GREEN_BRIGHT;
+    private static final TextColor BLACK_PIECE = TextColor.ANSI.BLACK;
+    private static final TextColor WHITE_PIECE = TextColor.ANSI.WHITE_BRIGHT;
     private static final TextColor PANEL_BG = TextColor.ANSI.BLACK;
     private static final TextColor MINE_COLOR = TextColor.ANSI.RED;
     private static final TextColor FLAG_COLOR = TextColor.ANSI.YELLOW;
@@ -51,12 +54,17 @@ public final class LanternaUi {
     private static final int BOARD_PANEL_WIDTH = 24;
     private static final int LIST_PANEL_WIDTH = 22;
 
-    public void run(GameSession game) throws Exception {
-        MultiGameManager manager = new MultiGameManager(game);
-        runMulti(manager);
+    @Override
+    public String name() {
+        return "lanterna";
     }
 
-    public void runMulti(MultiGameManager manager) throws Exception {
+    @Override
+    public void launch(GameHall hall) throws Exception {
+        runMulti(hall.manager());
+    }
+
+    private void runMulti(MultiGameManager manager) throws Exception {
         DefaultTerminalFactory factory = new DefaultTerminalFactory();
         try (Screen screen = new TerminalScreen(factory.createTerminal())) {
             screen.startScreen();
@@ -76,7 +84,7 @@ public final class LanternaUi {
                     break;
                 }
 
-                ParsedCommand command = CommandParser.parse(input);
+                ParsedCommand command = CommandParser.parse(input, manager.registry());
                 if (command.type() == CommandType.QUIT) {
                     game.quit();
                     break;
@@ -115,71 +123,7 @@ public final class LanternaUi {
     }
 
     private static String handleInput(MultiGameManager manager, GameSession game, ParsedCommand command) {
-        return switch (command.type()) {
-            case NEW_GAME -> {
-                manager.addGame(command.gameMode());
-                yield "Added " + modeLabel(command.gameMode()) + " game " + manager.totalGames();
-            }
-            case DEMO -> "Demo mode started";
-            case STOP -> "Demo is not running";
-            case SWITCH -> {
-                if (manager.switchTo(command.boardIndex() - 1)) {
-                    yield "Switched to board " + command.boardIndex();
-                }
-                yield "Invalid board number";
-            }
-            case PASS -> messageFor(game, game.tryPass());
-            case FLAG -> {
-                if (game.mode() != GameMode.MINESWEEPER) {
-                    yield "Flag is only available in minesweeper";
-                }
-                yield messageFor(game, game.tryFlag(command.position()));
-            }
-            case MOVE -> {
-                if (game.mode() == GameMode.CHESS) {
-                    ChessGame chess = (ChessGame) game;
-                    if (command.from() == null || command.to() == null) {
-                        yield "坐标越界或格式错误";
-                    }
-                    chess.tryMove(command.from(), command.to(), command.promotionPiece());
-                    yield chess.lastMessage();
-                }
-                if (game.isOver()) {
-                    yield "This board is over";
-                }
-                yield messageFor(game, game.tryMove(command.position()));
-            }
-            case INVALID -> "Invalid input. Use a coordinate, move 1a 2a, f <coord>, switch <n>, demo, stop, or quit";
-            case QUIT -> "";
-        };
-    }
-
-    private static String formatDisc(Disc disc) {
-        return disc == Disc.BLACK ? "Black" : "White";
-    }
-
-    private static String messageFor(GameSession game, ActionResult result) {
-        return switch (result) {
-            case OK -> "";
-            case OUT_OF_BOUNDS -> "Out of bounds";
-            case NOT_EMPTY -> "Cell is not empty";
-            case INVALID_MOVE -> shouldPromptPass(game) ? "You still have legal moves, so pass is not allowed" : "Invalid move";
-            case ALREADY_REVEALED -> game.mode() == GameMode.MINESWEEPER ? "Cell already revealed" : "Cell is already occupied";
-            case FLAG_ON -> "Flag placed";
-            case FLAG_OFF -> "Flag removed";
-            case FLAGGED_CELL -> "Cell is flagged. Remove the flag first";
-            case MINE_HIT -> "Hit a mine. Game over";
-            case CLEAR_WIN -> "All safe cells revealed. You win";
-            case GAME_OVER -> "This board is over";
-            case PASS_OK -> "Turn passed";
-            case PASS_NOT_ALLOWED -> game.mode() == GameMode.REVERSI ? "Pass is not allowed because legal moves exist" : "Pass is not supported in this mode";
-            case CHECKMATE -> "Checkmate! Game over";
-            case STALEMATE -> "Stalemate! Game is a draw";
-        };
-    }
-
-    private static boolean shouldPromptPass(GameSession game) {
-        return game.mode() == GameMode.REVERSI && !game.isOver() && game.validMoves().isEmpty();
+        return GameController.dispatch(manager, game, command);
     }
 
     private static String readLine(
@@ -214,7 +158,7 @@ public final class LanternaUi {
                 }
                 return buffer.toString();
             }
-            updateCursor(key.getKeyType(), cursor, game.board().size());
+            updateCursor(key.getKeyType(), cursor, game.boardSize());
             if (key.getKeyType() == KeyType.Backspace && selectedChessFrom != null && buffer.isEmpty()) {
                 selectedChessFrom = null;
                 continue;
@@ -260,7 +204,7 @@ public final class LanternaUi {
                 if (key.getKeyType() == KeyType.Enter) {
                     String commandText = buffer.toString();
                     buffer.setLength(0);
-                    ParsedCommand command = CommandParser.parse(commandText);
+                    ParsedCommand command = CommandParser.parse(commandText, manager.registry());
                     if (command.type() == CommandType.QUIT) {
                         return "quit";
                     }
@@ -270,7 +214,7 @@ public final class LanternaUi {
                     message = "[ DEMO MODE ] type stop or quit";
                     continue;
                 }
-                updateCursor(key.getKeyType(), cursor, game.board().size());
+                updateCursor(key.getKeyType(), cursor, game.boardSize());
                 if (key.getKeyType() == KeyType.Backspace && !buffer.isEmpty()) {
                     buffer.deleteCharAt(buffer.length() - 1);
                 }
@@ -340,11 +284,9 @@ public final class LanternaUi {
     private static void drawBoardPanel(TextGraphics g, int x, int y, int width, int height, GameSession game, Position cursor) {
         int innerX = x + 2;
         int innerY = y + 1;
-        int boardSize = game.board().size();
+        int boardSize = game.boardSize();
 
-        Set<Position> validMoves = (!game.isOver() && game.mode() == GameMode.REVERSI)
-            ? game.validMoves()
-            : Set.of();
+        Set<Position> validMoves = validMovesFor(game);
 
         g.setForegroundColor(COORD);
         StringBuilder colHeader = new StringBuilder();
@@ -368,8 +310,8 @@ public final class LanternaUi {
                 } else {
                     g.setBackgroundColor(PANEL_BG);
                 }
-                if (game.mode() == GameMode.MINESWEEPER) {
-                    String cell = ((MinesweeperGame) game).cellDisplay(p);
+                if (game instanceof MinesweeperSession) {
+                    String cell = game.cellDisplay(p);
                     if (!isCursor) {
                         g.setForegroundColor(minesweeperColor(cell));
                     }
@@ -377,18 +319,18 @@ public final class LanternaUi {
                     g.setBackgroundColor(PANEL_BG);
                     continue;
                 }
-                if (game.mode() == GameMode.CHESS) {
-                    char piece = ((ChessGame) game).pieceAt(p);
+                if (game instanceof ChessSession chess) {
+                    char piece = chess.pieceAt(p);
                     String cell = String.valueOf(piece);
                     if (!isCursor) {
-                        g.setForegroundColor(chessPieceColor(piece));
+                        setChessCellColors(g, piece);
                     }
                     putClipped(g, cellX + c * CELL_WIDTH, rowY, CELL_WIDTH, " " + cell);
                     g.setBackgroundColor(PANEL_BG);
                     continue;
                 }
 
-                Optional<Disc> disc = game.board().get(p);
+                Optional<Disc> disc = game instanceof BoardGameSession boardGame ? boardGame.board().get(p) : Optional.empty();
                 String cell;
                 if (disc.isPresent()) {
                     cell = disc.get() == Disc.BLACK ? BLACK_DISC : WHITE_DISC;
@@ -398,7 +340,11 @@ public final class LanternaUi {
                     cell = EMPTY_CELL;
                 }
                 if (!isCursor) {
-                    g.setForegroundColor(FG);
+                    if (disc.isPresent()) {
+                        setDiscCellColors(g, disc.get());
+                    } else {
+                        g.setForegroundColor(FG);
+                    }
                 }
                 putClipped(g, cellX + c * CELL_WIDTH, rowY, CELL_WIDTH, " " + cell);
                 g.setBackgroundColor(PANEL_BG);
@@ -407,11 +353,14 @@ public final class LanternaUi {
 
         int legendY = innerY + boardSize + 2;
         g.setForegroundColor(WARNING);
-        String legend = switch (game.mode()) {
-            case MINESWEEPER -> "# hidden  F flag  * mine  . zero";
-            case CHESS -> "KQRBNP black  kqrbnp white  . empty";
-            default -> BLACK_DISC + " black  " + WHITE_DISC + " white  + legal  . empty";
-        };
+        String legend;
+        if (game.mode().equals(GameMode.MINESWEEPER)) {
+            legend = "# hidden  F flag  * mine  . zero";
+        } else if (game.mode().equals(GameMode.CHESS)) {
+            legend = "KQRBNP black  kqrbnp white  . empty";
+        } else {
+            legend = BLACK_DISC + " black  " + WHITE_DISC + " white  + legal  . empty";
+        }
         putClipped(g, innerX, legendY, width - 4, legend);
 
         int helpY = legendY + 2;
@@ -445,7 +394,7 @@ public final class LanternaUi {
         g.setForegroundColor(FG);
         putClipped(g, innerX, innerY, innerWidth, "Game #" + (manager.activeIndex() + 1));
 
-        List<String> lines = middlePanelLines(game, cursor, message, demoMode);
+        List<String> lines = GameStatusPresenter.statusLines(manager.registry(), game, cellLabel(cursor), message, demoMode);
         int textY = innerY + 2;
         for (String line : lines) {
             g.setForegroundColor(statusLineColor(game, line));
@@ -463,7 +412,7 @@ public final class LanternaUi {
         int innerWidth = width - 2;
         for (int i = 0; i < manager.totalGames(); i++) {
             GameSession gSession = manager.getGame(i);
-            String mode = gSession == null ? "unknown" : modeLabel(gSession.mode());
+            String mode = gSession == null ? "unknown" : manager.registry().displayName(gSession.mode());
             if (i == active) {
                 g.setForegroundColor(HIGHLIGHT);
             } else {
@@ -495,11 +444,16 @@ public final class LanternaUi {
         g.setForegroundColor(HIGHLIGHT);
         putClipped(g, OUTER_MARGIN, y + 1, footerWidth, shortcuts);
         g.setForegroundColor(WARNING);
-        String modeHint = switch (game.mode()) {
-            case MINESWEEPER -> "1a open | f 1a flag | s 2 | demo | stop | quit";
-            case CHESS -> "m 7a 5a | m 8e 8g castle | s 2 | demo | quit";
-            default -> "1a move | pass | s 2 | demo | quit";
-        };
+        String modeHint;
+        if (game.mode().equals(GameMode.MINESWEEPER)) {
+            modeHint = "1a open | f 1a flag | s 2 | demo | stop | quit";
+        } else if (game.mode().equals(GameMode.CHESS)) {
+            modeHint = "m 7a 5a | m 8e 8g castle | s 2 | demo | quit";
+        } else if (game instanceof PassableSession) {
+            modeHint = "1a move | pass | s 2 | demo | quit";
+        } else {
+            modeHint = "1a move | s 2 | demo | quit";
+        }
         putClipped(g, OUTER_MARGIN, y + 2, footerWidth, modeHint);
     }
 
@@ -549,130 +503,16 @@ public final class LanternaUi {
         return "..." + clipFromEnd(text, width - 3);
     }
 
-    private static List<String> middlePanelLines(GameSession game, Position cursor, String message, boolean demoMode) {
-        if (demoMode) {
-            List<String> base = middlePanelLines(game, cursor, message, false);
-            java.util.ArrayList<String> lines = new java.util.ArrayList<>();
-            lines.add("[ DEMO MODE ]");
-            lines.add("Demo: running");
-            lines.addAll(base);
-            return lines;
-        }
-        if (game.mode() == GameMode.MINESWEEPER) {
-            MinesweeperGame minesweeper = (MinesweeperGame) game;
-            String state = minesweeper.isOver()
-                ? (minesweeper.lastMessage().contains("win") ? "State: Won" : "State: Lost")
-                : "State: In progress";
-            return List.of(
-                "Mode: minesweeper",
-                "Mines: " + minesweeper.mineCount(),
-                "Flags: " + minesweeper.flagCount(),
-                state,
-                "Cursor: " + cellLabel(cursor),
-                "Last: " + lastMessage(message, minesweeper.lastMessage()),
-                "Hint: first move safe"
-            );
-        }
-
-        Map<Disc, Integer> counts = game.counts();
-        int black = counts.getOrDefault(Disc.BLACK, 0);
-        int white = counts.getOrDefault(Disc.WHITE, 0);
-        if (game.mode() == GameMode.CHESS) {
-            ChessGame chess = (ChessGame) game;
-            if (game.isOver()) {
-                var detail = chess.pieceDetails();
-                var wd = detail.get(Disc.WHITE);
-                var bd = detail.get(Disc.BLACK);
-                return List.of(
-                    "Mode: chess",
-                    "State: === GAME OVER ===",
-                    chess.resultSummary(),
-                    "White: " + formatPieces(wd),
-                    "Black: " + formatPieces(bd),
-                    "Cursor: " + cellLabel(cursor),
-                    "Last: " + lastMessage(message, chess.lastMessage())
-                );
-            }
-            return List.of(
-                "Mode: chess",
-                "To move: " + chessTurnLabel(game),
-                "State: running",
-                "Move: " + chess.moveCount(),
-                "Cursor: " + cellLabel(cursor),
-                "Last: " + lastMessage(message, chess.lastMessage()),
-                "Hint: m 1a 2a"
-            );
-        }
-        if (game.mode() == GameMode.PEACE) {
-            return List.of(
-                "Mode: peace",
-                "Turn: " + formatDisc(game.current()),
-                "Score B/W: " + black + " / " + white,
-                "State: " + (game.isOver() ? "over" : "running"),
-                "Cursor: " + cellLabel(cursor),
-                "Last: " + lastMessage(message, "")
-            );
-        }
-        String passHint = (!game.isOver() && game.validMoves().isEmpty()) ? "Hint: type pass" : "Hint: enter a coordinate";
-        return List.of(
-            "Mode: reversi",
-            "Turn: " + formatDisc(game.current()),
-            "Score B/W: " + black + " / " + white,
-            "Legal: " + game.validMoves().size(),
-            "Cursor: " + cellLabel(cursor),
-            "Last: " + lastMessage(message, ""),
-            passHint
-        );
-    }
-
     private static List<String> commandHelp(GameSession game) {
-        if (game.mode() == GameMode.MINESWEEPER) {
-            return List.of(
-                "1a       open",
-                "f 1a     flag",
-                "s 2      switch",
-                "minesweeper new",
-                "demo     auto",
-                "stop     manual",
-                "quit"
-            );
-        }
-        if (game.mode() == GameMode.CHESS) {
-            return List.of(
-                "m 1a 2a  move",
-                "m 7a 8a q prom",
-                "s 2      switch",
-                "chess    new game",
-                "demo     auto",
-                "stop     manual",
-                "quit"
-            );
-        }
-        return List.of(
-            "1a       move",
-            "s 2      switch",
-            "peace    new game",
-            "pass",
-            "demo     auto",
-            "stop     manual",
-            "quit"
-        );
-    }
-
-    private static String modeLabel(GameMode mode) {
-        return GameRegistry.defaultRegistry().displayName(mode);
-    }
-
-    private static String chessTurnLabel(GameSession game) {
-        if (game.isOver()) {
-            return "-";
-        }
-        return game.current() == Disc.WHITE ? "White (lowercase)" : "Black (UPPERCASE)";
+        return GameController.commandHelp(game);
     }
 
     private static TextColor statusLineColor(GameSession game, String line) {
         if (game.mode() == GameMode.CHESS && line != null && line.startsWith("To move:")) {
-            return game.current() == Disc.WHITE ? WHITE_PIECE : BLACK_PIECE;
+            return game instanceof ChessSession chess && chess.current() == Disc.WHITE ? WHITE_PIECE : MUTED;
+        }
+        if (line != null && line.startsWith("Turn:")) {
+            return line.contains("White") ? WHITE_PIECE : MUTED;
         }
         if ("[ DEMO MODE ]".equals(line)) {
             return WARNING;
@@ -693,14 +533,24 @@ public final class LanternaUi {
         return base;
     }
 
-    private static TextColor chessPieceColor(char piece) {
+    private static void setChessCellColors(TextGraphics g, char piece) {
         if (piece == '.') {
-            return COORD;
+            g.setForegroundColor(COORD);
+        } else if (Character.isUpperCase(piece)) {
+            g.setBackgroundColor(TextColor.ANSI.WHITE_BRIGHT);
+            g.setForegroundColor(BLACK_PIECE);
+        } else {
+            g.setForegroundColor(WHITE_PIECE);
         }
-        if (Character.isUpperCase(piece)) {
-            return BLACK_PIECE;
+    }
+
+    private static void setDiscCellColors(TextGraphics g, Disc disc) {
+        if (disc == Disc.BLACK) {
+            g.setBackgroundColor(TextColor.ANSI.WHITE_BRIGHT);
+            g.setForegroundColor(BLACK_PIECE);
+        } else {
+            g.setForegroundColor(WHITE_PIECE);
         }
-        return WHITE_PIECE;
     }
 
     private static TextColor minesweeperColor(String cell) {
@@ -718,6 +568,10 @@ public final class LanternaUi {
             case "8" -> TextColor.ANSI.WHITE;
             default -> FG;
         };
+    }
+
+    private static Set<Position> validMovesFor(GameSession game) {
+        return GameController.validMovesFor(game);
     }
 
     private static void drawBox(TextGraphics g, int x, int y, int width, int height, String title) {
@@ -783,24 +637,6 @@ public final class LanternaUi {
 
     private static String cellLabel(Position p) {
         return (p.row() + 1) + String.valueOf((char) ('a' + p.col()));
-    }
-
-    private static String lastMessage(String message, String fallback) {
-        if (message != null && !message.isBlank()) {
-            return message;
-        }
-        return fallback == null ? "" : fallback;
-    }
-
-    private static String formatPieces(Map<Character, Integer> detail) {
-        if (detail == null || detail.isEmpty()) return "none";
-        StringBuilder sb = new StringBuilder();
-        char[] order = {'K', 'Q', 'R', 'B', 'N', 'P'};
-        for (char t : order) {
-            Integer n = detail.get(t);
-            if (n != null) sb.append(n).append(t).append(" ");
-        }
-        return sb.toString().trim();
     }
 
     private static String clipToWidth(String text, int width) {

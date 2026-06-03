@@ -1,7 +1,7 @@
 package reversi.gamehall;
 
 import reversi.core.GameSession;
-import reversi.core.MultiGameManager;
+import reversi.gamehall.MultiGameManager;
 
 import java.util.HashMap;
 import java.util.Map;

@@ -1,9 +1,10 @@
 package reversi.games.minesweeper;
 
-import reversi.core.GameMode;
+import reversi.core.model.GameMode;
 import reversi.core.GameSession;
-import reversi.core.MinesweeperGame;
-import reversi.core.Position;
+import reversi.games.minesweeper.MinesweeperGame;
+import reversi.games.minesweeper.MinesweeperSession;
+import reversi.core.model.Position;
 import reversi.gamehall.DemoScript;
 import reversi.gamehall.GamePlugin;
 
@@ -43,18 +44,18 @@ public final class MinesweeperGamePlugin implements GamePlugin {
 
     @Override
     public DemoScript createDemoScript(GameSession game) {
-        if (!(game instanceof MinesweeperGame)) {
+        if (!(game instanceof MinesweeperSession)) {
             return () -> "Minesweeper demo: invalid game type";
         }
-        return new MinesweeperDemoScript((MinesweeperGame) game);
+        return new MinesweeperDemoScript((MinesweeperSession) game);
     }
 
     private static final class MinesweeperDemoScript implements DemoScript {
-        private final MinesweeperGame game;
+        private final MinesweeperSession game;
         private final List<Position> safeSequence;
         private int stepIndex;
 
-        private MinesweeperDemoScript(MinesweeperGame game) {
+        private MinesweeperDemoScript(MinesweeperSession game) {
             this.game = game;
             this.safeSequence = generateSafeSequence();
             this.stepIndex = 0;
@@ -99,25 +100,25 @@ public final class MinesweeperGamePlugin implements GamePlugin {
                 return "Minesweeper demo complete - Victory!";
             }
 
-            if (stepIndex >= safeSequence.size()) {
-                return "Minesweeper demo: all safe cells revealed";
+            while (stepIndex < safeSequence.size()) {
+                Position move = safeSequence.get(stepIndex);
+                stepIndex++;
+                if (game.isRevealed(move)) {
+                    continue;
+                }
+
+                boolean firstMove = !game.isGenerated();
+                game.tryMove(move);
+                if (game.isOver()) {
+                    return "Minesweeper demo complete - Victory!";
+                }
+                if (firstMove) {
+                    return "Minesweeper demo: first move " + label(move);
+                }
+                return "Minesweeper demo: reveal " + label(move);
             }
 
-            Position move = safeSequence.get(stepIndex);
-            stepIndex++;
-
-            boolean[][] revealed = game.getRevealed();
-            if (revealed[move.row()][move.col()]) {
-                return "Minesweeper demo: skip already revealed " + label(move);
-            }
-
-            game.tryMove(move);
-
-            if (!game.isGenerated()) {
-                return "Minesweeper demo: first move " + label(move);
-            }
-
-            return "Minesweeper demo: reveal " + label(move);
+            return "Minesweeper demo: all safe cells revealed";
         }
 
         private String label(Position p) {

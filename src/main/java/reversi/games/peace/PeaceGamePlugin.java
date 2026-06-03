@@ -1,9 +1,10 @@
 package reversi.games.peace;
 
-import reversi.core.GameMode;
+import reversi.core.model.GameMode;
 import reversi.core.GameSession;
-import reversi.core.PeaceGame;
-import reversi.core.Position;
+import reversi.games.peace.PeaceGame;
+import reversi.core.model.Position;
+import reversi.core.PositionMoveSession;
 import reversi.gamehall.DemoScript;
 import reversi.gamehall.GamePlugin;
 
@@ -38,15 +39,15 @@ public final class PeaceGamePlugin implements GamePlugin {
 
     @Override
     public DemoScript createDemoScript(GameSession game) {
-        return new PeaceDemoScript(game);
+        return new PeaceDemoScript((PositionMoveSession) game);
     }
 
     private static final class PeaceDemoScript implements DemoScript {
-        private final GameSession game;
+        private final PositionMoveSession game;
         private final List<Position> moves;
         private int index;
 
-        private PeaceDemoScript(GameSession game) {
+        private PeaceDemoScript(PositionMoveSession game) {
             this.game = game;
             this.moves = List.of(
                 new Position(0, 0),

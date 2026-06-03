@@ -1,36 +1,17 @@
 package reversi.core;
 
-import java.util.Map;
-import java.util.Set;
+import reversi.core.model.*;
 
 public interface GameSession {
     GameMode mode();
 
-    Board board();
+    int boardSize();
 
-    Disc current();
+    String cellDisplay(Position p);
 
     boolean isQuit();
 
     void quit();
 
     boolean isOver();
-
-    Map<Disc, Integer> counts();
-
-    Set<Position> validMoves();
-
-    Set<Position> validMoves(Disc disc);
-
-    ActionResult tryMove(Position p);
-
-    default ActionResult tryMove(Position from, Position to, Character promotionPiece) {
-        return ActionResult.INVALID_MOVE;
-    }
-
-    default ActionResult tryFlag(Position p) {
-        return ActionResult.INVALID_MOVE;
-    }
-
-    ActionResult tryPass();
 }

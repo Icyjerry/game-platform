@@ -6,201 +6,445 @@ import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.Cursor;
 import javafx.scene.Scene;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
-import javafx.scene.input.KeyCode;
-import javafx.scene.input.KeyEvent;
-import javafx.scene.layout.*;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Tooltip;
+import javafx.scene.input.MouseButton;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BackgroundFill;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
 import javafx.util.Duration;
-import reversi.command.CommandParser;
-import reversi.command.CommandType;
-import reversi.command.ParsedCommand;
-import reversi.core.*;
+import reversi.core.BoardGameSession;
+import reversi.core.FlaggableSession;
+import reversi.core.GameSession;
+import reversi.core.PassableSession;
+import reversi.core.PositionMoveSession;
+import reversi.core.model.ActionResult;
+import reversi.core.model.Disc;
+import reversi.core.model.GameMode;
+import reversi.core.model.Position;
+import reversi.games.chess.ChessSession;
+import reversi.games.minesweeper.MinesweeperSession;
 import reversi.gamehall.DemoController;
+import reversi.gamehall.GameController;
 import reversi.gamehall.GameHall;
 import reversi.gamehall.GamePlugin;
-import reversi.gamehall.GameRegistry;
+import reversi.gamehall.GameStatusPresenter;
+import reversi.gamehall.MultiGameManager;
+import reversi.gamehall.UiPlugin;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
-public final class JavaFxUi extends Application {
+public final class JavaFxUi extends Application implements UiPlugin {
+    private static final Color BG = Color.web("#171511");
+    private static final Color PANEL_BG = Color.web("#211f1a");
+    private static final Color SURFACE = Color.web("#27231c");
+    private static final Color SURFACE_2 = Color.web("#332d23");
+    private static final Color BORDER = Color.web("#3b3327");
+    private static final Color FG = Color.web("#eee7d6");
+    private static final Color HIGHLIGHT = Color.web("#9b7347");
+    private static final Color WARNING = Color.web("#b9823b");
+    private static final Color DANGER_COLOR = Color.web("#9f4a3f");
+    private static final Color SUCCESS = Color.web("#6f8557");
+    private static final Color MUTED = Color.web("#a99f8c");
+    private static final Color COORD = Color.web("#7f725e");
+    private static final Color BLACK_TURN = Color.web("#ded6c8");
+    private static final Color WHITE_TURN = Color.web("#fff8e8");
 
-    private static int startBoardSize = 8;
+    private static final String FONT = "System";
+    private static final double FS = 14;
+    private static final double CELL = 58;
 
-    // Colors matching the Lanterna terminal theme
-    private static final Color BG        = Color.web("#111111");
-    private static final Color FG        = Color.WHITE;
-    private static final Color HIGHLIGHT = Color.CYAN;
-    private static final Color WARNING   = Color.YELLOW;
-    private static final Color MUTED     = Color.web("#cccccc");
-    private static final Color COORD     = Color.web("#888888");
-    private static final Color BLK_PC    = Color.web("#ffd700");  // yellow-bright
-    private static final Color WHT_PC    = Color.web("#90ee90");  // green-bright
-    private static final Color MINE_CLR  = Color.web("#ff4444");
-    private static final Color FLAG_CLR  = Color.YELLOW;
+    private static GameHall sharedHall;
 
-    private static final String FONT   = "Courier New";
-    private static final double FS     = 14;
-    private static final double CELL   = 36;  // 从 26 改为 36，增大棋子显示
-
-    // Game state
     private MultiGameManager manager;
-    private Position cursor   = new Position(0, 0);
-    private String   message  = "";
-    private boolean  demoMode = false;
+    private Position lastClicked = new Position(0, 0);
+    private Position chessFrom;
+    private String message = "Click a board square to play";
+    private boolean demoMode;
     private DemoController demoCtrl;
-    private Position chessFrom = null;
     private Timeline demoLine;
 
-    // UI nodes (set during start())
     private GridPane boardGrid;
-    private VBox     statusBox;
-    private VBox     gameListBox;
-    private Label    msgLabel;
-    private Label    shortcutLabel;
-    private Label    hintLabel;
-    private Label    promptLabel;
-    private TextField cmdField;
+    private StackPane boardShell;
+    private VBox controlsBox;
+    private VBox statusBox;
+    private VBox gameListBox;
+    private Label boardTitle;
+    private HBox boardMeta;
+    private Label messageLabel;
 
-    public static void launchApp(int boardSize) {
-        startBoardSize = boardSize;
-        launch(JavaFxUi.class);
+    @Override
+    public String name() {
+        return "javafx";
+    }
+
+    @Override
+    public void launch(GameHall hall) {
+        sharedHall = hall;
+        Application.launch(JavaFxUi.class);
     }
 
     @Override
     public void start(Stage stage) {
-        GameHall hall = GameHall.newHall(startBoardSize);
+        GameHall hall = sharedHall;
         manager = hall.manager();
 
         BorderPane root = new BorderPane();
         root.setBackground(solidBg(BG));
-        root.setPadding(new Insets(8));
+        root.setPadding(new Insets(14));
 
-        HBox panels = new HBox(8);
-        panels.setFillHeight(true);
+        VBox leftPanel = titledPanel("Control");
+        controlsBox = new VBox(8);
+        controlsBox.setPadding(new Insets(4, 0, 8, 0));
+        statusBox = new VBox(4);
+        statusBox.setPadding(new Insets(8, 0, 0, 0));
+        leftPanel.getChildren().addAll(controlsBox, separator(), statusBox);
+        leftPanel.setPrefWidth(292);
+        leftPanel.setMinWidth(270);
 
-        VBox boardPanel  = titledPanel(" BOARD ");
+        VBox boardPanel = titledPanel("Board");
+        HBox boardHeader = new HBox(12);
+        boardHeader.setAlignment(Pos.CENTER_LEFT);
+        boardTitle = lbl("", FG, Font.font(FONT, FontWeight.BOLD, 24));
+        boardTitle.setWrapText(true);
+        boardMeta = new HBox(8);
+        boardMeta.setAlignment(Pos.CENTER_RIGHT);
+        Region titleSpacer = new Region();
+        HBox.setHgrow(titleSpacer, Priority.ALWAYS);
+        boardHeader.getChildren().addAll(boardTitle, titleSpacer, boardMeta);
+
         boardGrid = new GridPane();
-        boardGrid.setPadding(new Insets(6, 4, 4, 4));
-        boardPanel.getChildren().add(boardGrid);
+        boardGrid.setAlignment(Pos.CENTER);
+        boardGrid.setPadding(new Insets(12));
+        boardShell = new StackPane(boardGrid);
+        boardShell.setPadding(new Insets(12));
+        boardShell.setStyle(boardShellStyle(null));
+        boardPanel.getChildren().addAll(boardHeader, boardShell);
+        HBox.setHgrow(boardPanel, Priority.ALWAYS);
 
-        VBox statusPanel = titledPanel(" STATUS ");
-        statusBox = new VBox(3);
-        statusBox.setPadding(new Insets(4));
-        statusPanel.getChildren().add(statusBox);
+        VBox rightPanel = titledPanel("Games");
+        gameListBox = new VBox(6);
+        gameListBox.setPadding(new Insets(4, 0, 0, 0));
+        ScrollPane listScroll = scroll(gameListBox);
+        rightPanel.getChildren().add(listScroll);
+        rightPanel.setPrefWidth(260);
+        rightPanel.setMinWidth(238);
 
-        VBox listPanel   = titledPanel(" GAME LIST ");
-        gameListBox = new VBox(3);
-        gameListBox.setPadding(new Insets(4));
-        listPanel.getChildren().add(gameListBox);
+        HBox main = new HBox(12, leftPanel, boardPanel, rightPanel);
+        main.setFillHeight(true);
+        root.setCenter(main);
 
-        boardPanel.setMinWidth(210);
-        listPanel.setMinWidth(160);
-        HBox.setHgrow(statusPanel, Priority.ALWAYS);
+        messageLabel = lbl("", MUTED, Font.font(FONT, FontWeight.BOLD, FS));
+        messageLabel.setWrapText(true);
+        messageLabel.setPadding(new Insets(10, 14, 10, 14));
+        root.setBottom(messageLabel);
 
-        panels.getChildren().addAll(boardPanel, statusPanel, listPanel);
-
-        VBox footer = buildFooter();
-        root.setCenter(panels);
-        root.setBottom(footer);
-
-        Scene scene = new Scene(root, 940, 680);
+        Scene scene = new Scene(root, 1280, 760);
         scene.setFill(BG);
-        scene.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
-
-        stage.setTitle("Game Hall");
+        stage.setTitle("Game Hall - JavaFX");
         stage.setScene(scene);
         stage.show();
 
         refresh();
-        Platform.runLater(() -> cmdField.requestFocus());
     }
 
-    // ── Key handling ─────────────────────────────────────────────────────────
+    private void refresh() {
+        GameSession game = manager.activeGame();
+        drawControls(game);
+        drawStatus(game);
+        drawBoard(game);
+        drawGameList();
+        drawMessage();
+    }
 
-    private void onKey(KeyEvent e) {
-        int size = manager.activeGame().board().size();
-        switch (e.getCode()) {
-            case UP    -> { shiftCursor(-1,  0, size); e.consume(); }
-            case DOWN  -> { shiftCursor( 1,  0, size); e.consume(); }
-            case LEFT  -> { shiftCursor( 0, -1, size); e.consume(); }
-            case RIGHT -> { shiftCursor( 0,  1, size); e.consume(); }
-            case BACK_SPACE -> {
-                if (cmdField.getText().isEmpty() && chessFrom != null) {
-                    chessFrom = null;
-                    message = "Selection cleared";
-                    refresh();
-                    e.consume();
+    private void drawControls(GameSession game) {
+        controlsBox.getChildren().clear();
+
+        controlsBox.getChildren().addAll(modeBanner(game), sectionLabel("Match actions"));
+
+        Button newGame = button("New Game", "Reset the selected board", ButtonTone.PRIMARY, () -> {
+            stopDemo();
+            if (manager.resetActiveGame()) {
+                clearSelection();
+                message = "New " + modeName(manager.activeGame().mode()) + " game started";
+            }
+            refresh();
+        });
+
+        Button pass = button("Pass", "Pass when the current Reversi player has no legal move", ButtonTone.SECONDARY, () -> {
+            stopDemo();
+            if (manager.activeGame() instanceof PassableSession passable) {
+                ActionResult result = passable.tryPass();
+                message = resultMsg(manager.activeGame(), result);
+                if (message.isBlank()) {
+                    message = "Turn passed";
                 }
             }
-            default -> {}
+            refresh();
+        });
+        pass.setDisable(!(game instanceof PassableSession) || game.isOver() || demoMode);
+
+        Button demo = button("Demo", "Start automatic demo mode", ButtonTone.SECONDARY, this::startDemo);
+        demo.setDisable(demoMode);
+
+        Button stop = button("Stop Demo", "Return to manual mouse play", ButtonTone.SECONDARY, () -> {
+            stopDemo();
+            message = "Demo stopped";
+            refresh();
+        });
+        stop.setDisable(!demoMode);
+
+        HBox demoRow = new HBox(8, demo, stop);
+        HBox.setHgrow(demo, Priority.ALWAYS);
+        HBox.setHgrow(stop, Priority.ALWAYS);
+
+        Button quit = button("Quit", "Exit the program safely", ButtonTone.DANGER, Platform::exit);
+
+        controlsBox.getChildren().addAll(newGame, pass, demoRow, quit, separator(), sectionLabel("Add board"));
+
+        for (GamePlugin plugin : manager.registry().plugins()) {
+            Button add = button("+ " + plugin.displayName(), "Create another " + plugin.displayName() + " board",
+                ButtonTone.SECONDARY, () -> {
+                stopDemo();
+                manager.addGame(plugin.mode());
+                manager.switchTo(manager.totalGames() - 1);
+                clearSelection();
+                message = "Added " + plugin.displayName() + " game #" + manager.totalGames();
+                refresh();
+            });
+            controlsBox.getChildren().add(add);
         }
     }
 
-    private void shiftCursor(int dr, int dc, int size) {
-        int r = Math.max(0, Math.min(size - 1, cursor.row() + dr));
-        int c = Math.max(0, Math.min(size - 1, cursor.col() + dc));
-        cursor = new Position(r, c);
-        refresh();
+    private void drawStatus(GameSession game) {
+        statusBox.getChildren().clear();
+        Font f = Font.font(FONT, FS);
+        statusBox.getChildren().add(sectionLabel("Status"));
+        for (String line : statusLines(game)) {
+            Label label = lbl(line, statusColor(game, line), f);
+            label.setWrapText(true);
+            label.setMaxWidth(Double.MAX_VALUE);
+            label.setPadding(new Insets(7, 9, 7, 9));
+            label.setStyle(panelStyle(Color.web("#0d141b"), BORDER, 6));
+            statusBox.getChildren().add(label);
+        }
+        statusBox.getChildren().add(separator());
+        Label hint = lbl(guiHint(game), WARNING, Font.font(FONT, FontWeight.BOLD, FS));
+        hint.setWrapText(true);
+        hint.setMaxWidth(Double.MAX_VALUE);
+        hint.setPadding(new Insets(8, 10, 8, 10));
+        hint.setStyle(panelStyle(Color.web("#1f1a10"), Color.web("#5c4213"), 6));
+        statusBox.getChildren().add(hint);
     }
 
-    private void submit() {
-        String txt = cmdField.getText().trim();
-        cmdField.clear();
+    private void drawBoard(GameSession game) {
+        boardTitle.setText("Game #" + (manager.activeIndex() + 1) + " - " + displayMode(game.mode()));
+        boardMeta.getChildren().setAll(summaryChips(game));
+        boardShell.setStyle(boardShellStyle(game));
+        boardGrid.getChildren().clear();
+        boardGrid.getColumnConstraints().clear();
+        boardGrid.setHgap(game instanceof MinesweeperSession ? 2 : 0);
+        boardGrid.setVgap(game instanceof MinesweeperSession ? 2 : 0);
 
+        int size = game.boardSize();
+        Set<Position> legal = validMovesFor(game);
+        Font coordFont = Font.font(FONT, FS);
+        Font cellFont = Font.font(FONT, FontWeight.BOLD, 28);
+
+        boardGrid.add(header(""), 0, 0);
+        for (int col = 0; col < size; col++) {
+            boardGrid.add(header(String.valueOf((char) ('a' + col))), col + 1, 0);
+        }
+
+        for (int row = 0; row < size; row++) {
+            Label rowLabel = lbl(String.valueOf(row + 1), COORD, coordFont);
+            rowLabel.setMinWidth(34);
+            rowLabel.setAlignment(Pos.CENTER);
+            boardGrid.add(rowLabel, 0, row + 1);
+            for (int col = 0; col < size; col++) {
+                Position p = new Position(row, col);
+                StackPane cell = cell(game, p, legal, cellFont);
+                boardGrid.add(cell, col + 1, row + 1);
+            }
+        }
+
+        boardGrid.getColumnConstraints().add(new ColumnConstraints(34));
+        for (int col = 0; col < size; col++) {
+            boardGrid.getColumnConstraints().add(new ColumnConstraints(CELL));
+        }
+    }
+
+    private StackPane cell(GameSession game, Position p, Set<Position> legal, Font cellFont) {
+        JavaFxCellView.CellView view = JavaFxCellView.of(game, p, legal, chessFrom, lastClicked);
+        Label label = lbl(view.text(), view.textColor(), cellFont);
+        label.setAlignment(Pos.CENTER);
+        label.setStyle(view.textStyle());
+
+        StackPane cell = new StackPane(label);
+        cell.setMinSize(CELL, CELL);
+        cell.setMaxSize(CELL, CELL);
+        cell.setCursor(Cursor.HAND);
+        cell.setStyle(view.style());
+        cell.setOnMouseClicked(event -> {
+            handleCellClick(p, event.getButton());
+            event.consume();
+        });
+        Tooltip.install(cell, new Tooltip(view.tip()));
+        return cell;
+    }
+
+    private void drawGameList() {
+        gameListBox.getChildren().clear();
+        for (int i = 0; i < manager.totalGames(); i++) {
+            GameSession game = manager.getGame(i);
+            boolean active = i == manager.activeIndex();
+            Label title = lbl("#" + (i + 1), active ? HIGHLIGHT : MUTED, Font.font(FONT, FontWeight.BOLD, 12));
+            Label mode = lbl(displayMode(game.mode()), active ? FG : Color.web("#d8cfbd"),
+                Font.font(FONT, FontWeight.BOLD, FS));
+            Label state = lbl(game.isOver() ? "Finished" : "Playing", game.isOver() ? WARNING : SUCCESS,
+                Font.font(FONT, FontWeight.BOLD, 12));
+            state.setPadding(new Insets(2, 7, 2, 7));
+            state.setStyle(panelStyle(game.isOver() ? Color.web("#2a2118") : Color.web("#202719"),
+                game.isOver() ? Color.web("#5b4124") : Color.web("#475735"), 4));
+            Region rowSpacer = new Region();
+            HBox.setHgrow(rowSpacer, Priority.ALWAYS);
+            HBox top = new HBox(8, title, rowSpacer, state);
+            top.setAlignment(Pos.CENTER_LEFT);
+            VBox itemText = new VBox(5, top, mode);
+            StackPane item = new StackPane(itemText);
+            item.setAlignment(Pos.CENTER_LEFT);
+            item.setPadding(new Insets(10));
+            item.setCursor(Cursor.HAND);
+            item.setStyle(active
+                ? panelStyle(Color.web("#2f281d"), HIGHLIGHT, 5)
+                : panelStyle(SURFACE, BORDER, 7));
+            int index = i;
+            item.setOnMouseClicked(event -> {
+                if (event.getButton() == MouseButton.PRIMARY) {
+                    stopDemo();
+                    if (manager.switchTo(index)) {
+                        clearSelection();
+                        message = "Switched to game #" + (index + 1);
+                        refresh();
+                    }
+                }
+                event.consume();
+            });
+            gameListBox.getChildren().add(item);
+        }
+    }
+
+    private void drawMessage() {
+        String demo = demoMode ? " [DEMO]" : "";
+        messageLabel.setText((demoMode ? "Demo" : "Message") + demo + "  |  " + (message == null ? "" : message));
+        messageLabel.setTextFill(demoMode ? WARNING : MUTED);
+        messageLabel.setStyle(panelStyle(PANEL_BG, demoMode ? WARNING : BORDER, 8));
+    }
+
+    private void handleCellClick(Position p, MouseButton button) {
+        lastClicked = p;
         if (demoMode) {
-            ParsedCommand cmd = CommandParser.parse(txt);
-            if (cmd.type() == CommandType.QUIT)  { stopDemo(); Platform.exit(); return; }
-            if (cmd.type() == CommandType.STOP)  { stopDemo(); message = "Demo stopped"; refresh(); return; }
-            message = "[ DEMO MODE ] type stop or quit";
+            message = "Stop Demo before manual play";
             refresh();
             return;
         }
 
         GameSession game = manager.activeGame();
-
-        // Chess two-step cursor selection: empty input = select/confirm
-        if (game.mode() == GameMode.CHESS && txt.isEmpty()) {
-            if (chessFrom == null) {
-                chessFrom = cursor;
-                message = "Piece at " + pos(cursor) + " selected — move cursor and press Enter";
-                refresh();
-                return;
+        if (button == MouseButton.SECONDARY) {
+            if (game instanceof FlaggableSession flaggable) {
+                ActionResult result = flaggable.tryFlag(p);
+                message = resultMsg(game, result);
             } else {
-                txt = "m " + pos(chessFrom) + " " + pos(cursor);
-                chessFrom = null;
+                message = "Right click is only used for minesweeper flags";
             }
-        } else {
-            chessFrom = null;
+            refresh();
+            return;
+        }
+        if (button != MouseButton.PRIMARY) {
+            return;
         }
 
-        if (txt.isEmpty()) txt = pos(cursor);
-
-        ParsedCommand cmd = CommandParser.parse(txt);
-        if (cmd.type() == CommandType.QUIT)  { Platform.exit(); return; }
-        if (cmd.type() == CommandType.DEMO)  { startDemo(); return; }
-
-        message = dispatch(cmd, game);
+        if (game instanceof ChessSession chess) {
+            handleChessClick(chess, p);
+        } else if (game instanceof PositionMoveSession mover) {
+            ActionResult result = mover.tryMove(p);
+            message = resultMsg(game, result);
+            if (message.isBlank()) {
+                message = "Played " + pos(p);
+            }
+        } else {
+            message = "This game does not use board clicks";
+        }
         refresh();
     }
 
-    // ── Demo mode ────────────────────────────────────────────────────────────
+    private void handleChessClick(ChessSession chess, Position p) {
+        char piece = chess.pieceAt(p);
+        if (chessFrom == null) {
+            if (piece == '.') {
+                message = "Select a chess piece first";
+                return;
+            }
+            if (!isCurrentChessPiece(piece, chess.current())) {
+                message = "Select a " + GameController.chessTurnLabel(chess) + " piece";
+                return;
+            }
+            chessFrom = p;
+            message = "Selected " + pos(p) + ". Click a target square";
+            return;
+        }
+
+        if (chessFrom.equals(p)) {
+            chessFrom = null;
+            message = "Selection cleared";
+            return;
+        }
+        if (piece != '.' && isCurrentChessPiece(piece, chess.current())) {
+            chessFrom = p;
+            message = "Selected " + pos(p) + ". Click a target square";
+            return;
+        }
+
+        chess.tryMove(chessFrom, p, null);
+        message = chess.lastMessage();
+        chessFrom = null;
+    }
 
     private void startDemo() {
+        if (demoMode) {
+            return;
+        }
+        clearSelection();
         demoMode = true;
-        demoCtrl  = new DemoController(manager);
-        message   = demoCtrl.lastMessage();
-        demoLine  = new Timeline(new KeyFrame(Duration.millis(50), ev -> {
+        demoCtrl = new DemoController(manager);
+        message = demoCtrl.lastMessage();
+        demoLine = new Timeline(new KeyFrame(Duration.millis(50), event -> {
             long now = System.currentTimeMillis();
-            if (demoCtrl.shouldTick(now)) message = demoCtrl.tick(now);
+            if (!demoMode || demoCtrl == null || !demoCtrl.shouldTick(now)) {
+                return;
+            }
+            int before = manager.activeIndex();
+            message = demoCtrl.tick(now);
+            if (manager.activeIndex() != before) {
+                clearSelection();
+            }
             refresh();
         }));
         demoLine.setCycleCount(Timeline.INDEFINITE);
@@ -210,445 +454,274 @@ public final class JavaFxUi extends Application {
 
     private void stopDemo() {
         demoMode = false;
-        if (demoLine != null) { demoLine.stop(); demoLine = null; }
+        if (demoLine != null) {
+            demoLine.stop();
+            demoLine = null;
+        }
         demoCtrl = null;
     }
 
-    // ── Command dispatch ─────────────────────────────────────────────────────
-
-    private String dispatch(ParsedCommand cmd, GameSession game) {
-        return switch (cmd.type()) {
-            case NEW_GAME -> {
-                manager.addGame(cmd.gameMode());
-                yield "Added " + modeName(cmd.gameMode()) + " game " + manager.totalGames();
-            }
-            case SWITCH -> {
-                if (manager.switchTo(cmd.boardIndex() - 1)) {
-                    cursor    = new Position(0, 0);
-                    chessFrom = null;
-                    yield "Switched to board " + cmd.boardIndex();
-                }
-                yield "Invalid board number";
-            }
-            case PASS    -> resultMsg(game, game.tryPass());
-            case FLAG    -> {
-                if (game.mode() != GameMode.MINESWEEPER) yield "Flag is only available in minesweeper";
-                yield resultMsg(game, game.tryFlag(cmd.position()));
-            }
-            case MOVE    -> {
-                if (game.mode() == GameMode.CHESS) {
-                    ChessGame chess = (ChessGame) game;
-                    if (cmd.from() == null || cmd.to() == null) yield "坐标越界或格式错误";
-                    chess.tryMove(cmd.from(), cmd.to(), cmd.promotionPiece());
-                    yield chess.lastMessage();
-                }
-                if (game.isOver()) yield "This board is over";
-                yield resultMsg(game, game.tryMove(cmd.position()));
-            }
-            case DEMO    -> "Demo mode started";
-            case STOP    -> "Demo is not running";
-            case INVALID -> "Invalid input. Use a coordinate, move 1a 2a, f <coord>, switch <n>, demo, stop, or quit";
-            case QUIT    -> "";
-        };
+    private List<String> statusLines(GameSession game) {
+        String cursorLabel = chessFrom == null ? pos(lastClicked) : pos(lastClicked) + " selected " + pos(chessFrom);
+        return GameStatusPresenter.statusLines(manager.registry(), game, cursorLabel, message, demoMode);
     }
 
-    // ── Refresh ──────────────────────────────────────────────────────────────
-
-    private void refresh() {
-        GameSession game = manager.activeGame();
-        drawBoard(game);
-        drawStatus(game);
-        drawGameList();
-        drawFooter(game);
-    }
-
-    // ── Board panel ──────────────────────────────────────────────────────────
-
-    private void drawBoard(GameSession game) {
-        boardGrid.getChildren().clear();
-        boardGrid.getColumnConstraints().clear();
-        boardGrid.getRowConstraints().clear();
-
-        int sz     = game.board().size();
-        Set<Position> legal = (!game.isOver() && game.mode() == GameMode.REVERSI)
-                ? game.validMoves() : Set.of();
-        Font bold  = Font.font(FONT, FontWeight.BOLD, 16);  // 增大字体
-        Font plain = Font.font(FONT, 14);
-
-        // Column header
-        boardGrid.add(lbl("   ", COORD, plain), 0, 0);
-        for (int c = 0; c < sz; c++) {
-            Label h = lbl(" " + (char) ('a' + c), COORD, plain);
-            h.setMinWidth(CELL);
-            h.setAlignment(Pos.CENTER);
-            boardGrid.add(h, c + 1, 0);
-        }
-
-        // Rows
-        for (int r = 0; r < sz; r++) {
-            boardGrid.add(lbl(String.format("%2d ", r + 1), COORD, plain), 0, r + 1);
-            for (int c = 0; c < sz; c++) {
-                Position p     = new Position(r, c);
-                boolean isCur  = p.equals(cursor);
-                boolean isSel  = chessFrom != null && chessFrom.equals(p);
-
-                String cellTxt;
-                Color  cellClr;
-
-                if (game.mode() == GameMode.MINESWEEPER) {
-                    cellTxt = ((MinesweeperGame) game).cellDisplay(p);
-                    cellClr = isCur ? Color.BLACK : msColor(cellTxt);
-                } else if (game.mode() == GameMode.CHESS) {
-                    char pc = ((ChessGame) game).pieceAt(p);
-                    cellTxt = String.valueOf(pc);
-                    cellClr = isCur ? Color.BLACK : chessColor(pc);
-                } else {
-                    Optional<Disc> d = game.board().get(p);
-                    if (d.isPresent()) {
-                        cellTxt = d.get() == Disc.BLACK ? "●" : "○";
-                        cellClr = isCur ? Color.BLACK : (d.get() == Disc.BLACK ? BLK_PC : WHT_PC);
-                    } else if (legal.contains(p)) {
-                        cellTxt = "+";
-                        cellClr = isCur ? Color.BLACK : WARNING;
-                    } else {
-                        cellTxt = "·";
-                        cellClr = isCur ? Color.BLACK : COORD;
-                    }
-                }
-
-                StackPane cell = new StackPane();
-                cell.setMinSize(CELL, CELL);
-                cell.setMaxSize(CELL, CELL);
-
-                // 棋盘交替背景色（国际象棋风格）
-                boolean isLight = (r + c) % 2 == 0;
-                Color bgColor = isLight ? Color.web("#2a2a2a") : Color.web("#1f1f1f");
-
-                if (isCur) {
-                    cell.setStyle("-fx-background-color: #00bcd4; -fx-border-color: #00ffff; -fx-border-width: 2;");
-                } else if (isSel) {
-                    cell.setStyle("-fx-background-color: #e65100; -fx-border-color: #ff8c00; -fx-border-width: 2;");
-                } else {
-                    cell.setStyle(String.format("-fx-background-color: %s; -fx-border-color: #444; -fx-border-width: 1;",
-                        toHexColor(bgColor)));
-                }
-
-                Label cl = lbl(cellTxt, isSel && !isCur ? Color.WHITE : cellClr, bold);
-                cell.getChildren().add(cl);
-                boardGrid.add(cell, c + 1, r + 1);
-            }
-        }
-
-        boardGrid.getColumnConstraints().add(new ColumnConstraints(40));
-        for (int c = 0; c < sz; c++)
-            boardGrid.getColumnConstraints().add(new ColumnConstraints(CELL));
-    }
-
-    // ── Status panel ─────────────────────────────────────────────────────────
-
-    private void drawStatus(GameSession game) {
-        statusBox.getChildren().clear();
-        Font f = Font.font(FONT, FS);
-
-        statusBox.getChildren().add(lbl("Game #" + (manager.activeIndex() + 1), FG, f));
-        statusBox.getChildren().add(gap());
-
+    private String guiHint(GameSession game) {
         if (demoMode) {
-            statusBox.getChildren().add(lbl("[ DEMO MODE ]", WARNING, f));
-            statusBox.getChildren().add(lbl("Demo: running", FG, f));
+            return "Demo is running. Use Stop Demo to return to manual play.";
         }
-
-        for (String line : statusLines(game)) {
-            Label l = lbl(line, statusColor(game, line), f);
-            l.setWrapText(true);
-            statusBox.getChildren().add(l);
+        if (game instanceof MinesweeperSession) {
+            return "Left click opens a cell. Right click toggles a flag.";
         }
-
-        statusBox.getChildren().add(gap());
-        statusBox.getChildren().add(lbl("Commands", MUTED, f));
-        for (String line : commandHelp(game))
-            statusBox.getChildren().add(lbl(line, FG, f));
-
-        statusBox.getChildren().add(gap());
-        String legend = switch (game.mode()) {
-            case MINESWEEPER -> "# hidden  F flag  * mine  . zero";
-            case CHESS       -> "KQRBNP=black  kqrbnp=white  .=empty";
-            default          -> "● black  ○ white  + legal  · empty";
-        };
-        Label leg = lbl(legend, WARNING, f);
-        leg.setWrapText(true);
-        statusBox.getChildren().add(leg);
+        if (game instanceof ChessSession) {
+            return "Left click one of your pieces, then left click the target square.";
+        }
+        if (game instanceof PassableSession boardGame && boardGame instanceof BoardGameSession bg
+                && !game.isOver() && bg.validMoves().isEmpty()) {
+            return "No legal move. Click Pass.";
+        }
+        return "Left click an available square to play.";
     }
 
-    // ── Game list panel ──────────────────────────────────────────────────────
+    private VBox modeBanner(GameSession game) {
+        Label mode = lbl(displayMode(game.mode()), FG, Font.font(FONT, FontWeight.BOLD, 20));
+        Label state = lbl("Game #" + (manager.activeIndex() + 1) + " of " + manager.totalGames()
+            + "  |  " + stateText(game), stateColor(game), Font.font(FONT, FontWeight.BOLD, 12));
+        VBox banner = new VBox(4, mode, state);
+        banner.setPadding(new Insets(12));
+        banner.setStyle(panelStyle(Color.web("#1b1813"), BORDER, 5));
+        return banner;
+    }
 
-    private void drawGameList() {
-        gameListBox.getChildren().clear();
-        Font f = Font.font(FONT, FS);
-        for (int i = 0; i < manager.totalGames(); i++) {
-            GameSession gs   = manager.getGame(i);
-            String name      = gs == null ? "unknown" : modeName(gs.mode());
-            boolean active   = i == manager.activeIndex();
-            gameListBox.getChildren().add(
-                lbl((i + 1) + ". " + name + (active ? " <-" : ""), active ? HIGHLIGHT : FG, f)
+    private List<Label> summaryChips(GameSession game) {
+        if (game instanceof MinesweeperSession ms) {
+            return List.of(
+                chip("Mines " + ms.mineCount(), WARNING),
+                chip("Flags " + ms.flagCount(), HIGHLIGHT),
+                chip(stateText(ms), stateColor(ms))
             );
         }
-        gameListBox.getChildren().add(gap());
-        gameListBox.getChildren().add(lbl("New:", MUTED, f));
-        for (GamePlugin plugin : manager.registry().plugins())
-            gameListBox.getChildren().add(lbl(plugin.id(), FG, f));
+        if (game instanceof ChessSession chess) {
+            return List.of(
+                chip(turnText(chess.current()), chess.current() == Disc.WHITE ? WHITE_TURN : BLACK_TURN),
+                chip("Move " + chess.moveCount(), HIGHLIGHT),
+                chip(stateText(chess), stateColor(chess))
+            );
+        }
+        if (game instanceof BoardGameSession boardGame) {
+            Map<Disc, Integer> counts = boardGame.counts();
+            return List.of(
+                chip(turnText(boardGame.current()), boardGame.current() == Disc.WHITE ? WHITE_TURN : BLACK_TURN),
+                chip("Black " + counts.getOrDefault(Disc.BLACK, 0), BLACK_TURN),
+                chip("White " + counts.getOrDefault(Disc.WHITE, 0), WHITE_TURN),
+                chip(game.mode().equals(GameMode.REVERSI) ? "Legal " + boardGame.validMoves().size() : stateText(game),
+                    game.isOver() ? WARNING : HIGHLIGHT)
+            );
+        }
+        return List.of(chip(stateText(game), stateColor(game)));
     }
 
-    // ── Footer ───────────────────────────────────────────────────────────────
-
-    private VBox buildFooter() {
-        VBox footer = new VBox(3);
-        footer.setPadding(new Insets(6, 0, 0, 0));
-
-        msgLabel      = lbl("", MUTED,      Font.font(FONT, FS));
-        shortcutLabel = lbl("", HIGHLIGHT,  Font.font(FONT, FS));
-        hintLabel     = lbl("", WARNING,    Font.font(FONT, FS));
-
-        HBox inputRow = new HBox(4);
-        inputRow.setAlignment(Pos.CENTER_LEFT);
-        promptLabel = lbl("B1/1 > ", HIGHLIGHT, Font.font(FONT, FS));
-
-        cmdField = new TextField();
-        cmdField.setStyle(
-            "-fx-background-color: #1a1a1a;" +
-            "-fx-text-fill: #00ffff;" +
-            "-fx-font-family: 'Courier New';" +
-            "-fx-font-size: 14;" +
-            "-fx-border-color: #444;" +
-            "-fx-border-width: 1;" +
-            "-fx-padding: 2 4 2 4;"
-        );
-        cmdField.setOnAction(e -> submit());
-        HBox.setHgrow(cmdField, Priority.ALWAYS);
-        inputRow.getChildren().addAll(promptLabel, cmdField);
-
-        footer.getChildren().addAll(msgLabel, shortcutLabel, hintLabel, inputRow);
-        return footer;
+    private Label chip(String text, Color color) {
+        Label label = lbl(text, color, Font.font(FONT, FontWeight.BOLD, 12));
+        label.setPadding(new Insets(4, 9, 4, 9));
+        label.setStyle(panelStyle(Color.web("#1b1813"), Color.web("#4a3b28"), 4));
+        return label;
     }
 
-    private void drawFooter(GameSession game) {
-        msgLabel.setText(message == null || message.isBlank() ? "" : "Message: " + message);
-        shortcutLabel.setText(shortcuts(game));
-        hintLabel.setText(switch (game.mode()) {
-            case MINESWEEPER -> "1a open | f 1a flag | s 2 | demo | stop | quit";
-            case CHESS       -> "m 7a 5a | m 8e 8g castle | s 2 | demo | quit";
-            default          -> "1a move | pass | s 2 | demo | quit";
-        });
-        int idx = manager.activeIndex() + 1;
-        promptLabel.setText("B" + idx + "/" + manager.totalGames() + (demoMode ? " DEMO" : "") + " > ");
+    private Label sectionLabel(String text) {
+        Label label = lbl(text, MUTED, Font.font(FONT, FontWeight.BOLD, 12));
+        label.setMaxWidth(Double.MAX_VALUE);
+        label.setPadding(new Insets(0, 0, 3, 0));
+        return label;
     }
 
-    private String shortcuts(GameSession game) {
-        if (demoMode) return "Input> demo running | type stop to return | quit exits";
-        if (game.mode() == GameMode.CHESS)
-            return chessFrom == null
-                ? "Input> arrows move cursor | Enter selects source then target"
-                : "Input> arrows move cursor | Enter confirms target | Backspace cancels";
-        if (game.mode() == GameMode.MINESWEEPER) return "Input> reveal one cell at a time | first move is always safe";
-        return "Input> switch boards freely | each board keeps state";
+    private Label header(String text) {
+        Label label = lbl(text, COORD, Font.font(FONT, FontWeight.BOLD, FS));
+        label.setMinWidth(CELL);
+        label.setMinHeight(24);
+        label.setAlignment(Pos.CENTER);
+        return label;
     }
 
-    // ── Panel / label helpers ────────────────────────────────────────────────
+    private Button button(String text, String tip, Runnable action) {
+        return button(text, tip, ButtonTone.SECONDARY, action);
+    }
+
+    private Button button(String text, String tip, ButtonTone tone, Runnable action) {
+        Button button = new Button(text);
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setMinHeight(38);
+        button.setCursor(Cursor.HAND);
+        button.setTooltip(new Tooltip(tip));
+        button.setFont(Font.font(FONT, FontWeight.BOLD, FS));
+        button.setStyle(buttonStyle(tone));
+        button.setOnAction(event -> action.run());
+        return button;
+    }
 
     private VBox titledPanel(String title) {
-        VBox panel = new VBox(4);
-        panel.setBackground(solidBg(BG));
-        panel.setStyle("-fx-border-color: #444444; -fx-border-width: 1;");
-        panel.setPadding(new Insets(4));
-        panel.getChildren().add(lbl(title, HIGHLIGHT, Font.font(FONT, FontWeight.BOLD, FS)));
+        VBox panel = new VBox(8);
+        panel.setBackground(solidBg(PANEL_BG));
+        panel.setStyle(panelStyle(PANEL_BG, BORDER, 4));
+        panel.setPadding(new Insets(12));
+        panel.getChildren().add(sectionLabel(title));
         return panel;
     }
 
+    private ScrollPane scroll(VBox content) {
+        ScrollPane scroll = new ScrollPane(content);
+        scroll.setFitToWidth(true);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        scroll.setStyle("-fx-background: transparent; -fx-background-color: transparent;"
+            + "-fx-control-inner-background: transparent;");
+        VBox.setVgrow(scroll, Priority.ALWAYS);
+        return scroll;
+    }
+
     private static Label lbl(String text, Color color, Font font) {
-        Label l = new Label(text);
-        l.setTextFill(color);
-        l.setFont(font);
-        return l;
+        Label label = new Label(text);
+        label.setTextFill(color);
+        label.setFont(font);
+        return label;
     }
 
-    private static Region gap() {
-        Region r = new Region();
-        r.setMinHeight(4);
-        r.setMaxHeight(4);
-        return r;
+    private static Region separator() {
+        Region region = new Region();
+        region.setMinHeight(1);
+        region.setMaxHeight(1);
+        region.setStyle("-fx-background-color: " + hex(BORDER) + ";");
+        return region;
     }
 
-    private static Background solidBg(Color c) {
-        return new Background(new BackgroundFill(c, null, null));
+    private static Background solidBg(Color color) {
+        return new Background(new BackgroundFill(color, null, null));
     }
 
-    private static String toHexColor(Color c) {
-        return String.format("#%02X%02X%02X",
-            (int)(c.getRed() * 255),
-            (int)(c.getGreen() * 255),
-            (int)(c.getBlue() * 255));
+    private void clearSelection() {
+        chessFrom = null;
+        lastClicked = new Position(0, 0);
     }
 
-    // ── Game-state helpers ───────────────────────────────────────────────────
-
-    private List<String> statusLines(GameSession game) {
-        if (game.mode() == GameMode.MINESWEEPER) {
-            MinesweeperGame ms = (MinesweeperGame) game;
-            String state = ms.isOver()
-                ? (ms.lastMessage().contains("win") ? "State: Won" : "State: Lost")
-                : "State: In progress";
-            return List.of(
-                "Mode: minesweeper",
-                "Mines: " + ms.mineCount(),
-                "Flags: " + ms.flagCount(),
-                state,
-                "Cursor: " + pos(cursor),
-                "Last: "  + ms.lastMessage(),
-                "Hint: first move safe"
-            );
+    private boolean isCurrentChessPiece(char piece, Disc side) {
+        if (piece == '.') {
+            return false;
         }
-        Map<Disc, Integer> cnt = game.counts();
-        int b = cnt.getOrDefault(Disc.BLACK, 0);
-        int w = cnt.getOrDefault(Disc.WHITE, 0);
-        if (game.mode() == GameMode.CHESS) {
-            ChessGame chess = (ChessGame) game;
-            if (game.isOver()) {
-                var detail = chess.pieceDetails();
-                var wd = detail.get(Disc.WHITE);
-                var bd = detail.get(Disc.BLACK);
-                String wPieces = formatPieceDetail(wd);
-                String bPieces = formatPieceDetail(bd);
-                return List.of(
-                    "Mode: chess",
-                    "State: === GAME OVER ===",
-                    chess.resultSummary(),
-                    "White: " + wPieces,
-                    "Black: " + bPieces,
-                    "Cursor: " + pos(cursor),
-                    "Last: " + chess.lastMessage()
-                );
-            }
-            return List.of(
-                "Mode: chess",
-                "To move: " + chessTurn(game),
-                "State: running",
-                "Move: " + chess.moveCount(),
-                "Cursor: " + pos(cursor),
-                "Last: "  + chess.lastMessage(),
-                "Hint: m 1a 2a  or cursor+Enter"
-            );
-        }
-        if (game.mode() == GameMode.PEACE) {
-            return List.of(
-                "Mode: peace",
-                "Turn: " + discName(game.current()),
-                "Score B/W: " + b + " / " + w,
-                "State: " + (game.isOver() ? "over" : "running"),
-                "Cursor: " + pos(cursor),
-                "Last: "  + message
-            );
-        }
-        String passHint = (!game.isOver() && game.validMoves().isEmpty())
-            ? "Hint: type pass" : "Hint: enter a coordinate";
-        return List.of(
-            "Mode: reversi",
-            "Turn: " + discName(game.current()),
-            "Score B/W: " + b + " / " + w,
-            "Legal: " + game.validMoves().size(),
-            "Cursor: " + pos(cursor),
-            "Last: "  + message,
-            passHint
-        );
-    }
-
-    private List<String> commandHelp(GameSession game) {
-        if (game.mode() == GameMode.MINESWEEPER)
-            return List.of("1a       open", "f 1a     flag", "s 2      switch",
-                "minesweeper new", "demo     auto", "stop     manual", "quit");
-        if (game.mode() == GameMode.CHESS)
-            return List.of("m 1a 2a  move", "m 7a 8a q prom", "s 2      switch",
-                "chess    new game", "demo     auto", "stop     manual", "quit");
-        return List.of("1a       move", "s 2      switch", "peace    new game",
-            "pass", "demo     auto", "stop     manual", "quit");
-    }
-
-    private Color statusColor(GameSession game, String line) {
-        if (game.mode() == GameMode.CHESS && line != null && line.startsWith("To move:"))
-            return game.current() == Disc.WHITE ? WHT_PC : BLK_PC;
-        if ("[ DEMO MODE ]".equals(line)) return WARNING;
-        return FG;
-    }
-
-    private Color chessColor(char pc) {
-        if (pc == '.') return COORD;
-        return Character.isUpperCase(pc) ? BLK_PC : WHT_PC;
-    }
-
-    private Color msColor(String c) {
-        return switch (c) {
-            case "*" -> MINE_CLR;
-            case "F" -> FLAG_CLR;
-            case "." -> MUTED;
-            case "1" -> Color.CYAN;
-            case "2" -> Color.LIGHTGREEN;
-            case "3" -> Color.YELLOW;
-            case "4" -> Color.web("#add8e6");
-            case "5" -> Color.MAGENTA;
-            case "6" -> Color.AQUAMARINE;
-            case "7" -> Color.ORANGERED;
-            case "8" -> Color.WHITE;
-            default  -> FG;
-        };
+        return side == Disc.WHITE ? Character.isLowerCase(piece) : Character.isUpperCase(piece);
     }
 
     private String resultMsg(GameSession game, ActionResult result) {
-        return switch (result) {
-            case OK               -> "";
-            case OUT_OF_BOUNDS    -> "Out of bounds";
-            case NOT_EMPTY        -> "Cell is not empty";
-            case INVALID_MOVE     -> (game.mode() == GameMode.REVERSI && !game.isOver() && game.validMoves().isEmpty())
-                    ? "You still have legal moves, so pass is not allowed" : "Invalid move";
-            case ALREADY_REVEALED -> game.mode() == GameMode.MINESWEEPER ? "Cell already revealed" : "Cell is already occupied";
-            case FLAG_ON          -> "Flag placed";
-            case FLAG_OFF         -> "Flag removed";
-            case FLAGGED_CELL     -> "Cell is flagged. Remove the flag first";
-            case MINE_HIT         -> "Hit a mine. Game over";
-            case CLEAR_WIN        -> "All safe cells revealed. You win";
-            case GAME_OVER        -> "This board is over";
-            case PASS_OK          -> "Turn passed";
-            case PASS_NOT_ALLOWED -> game.mode() == GameMode.REVERSI
-                    ? "Pass is not allowed because legal moves exist" : "Pass is not supported in this mode";
-            case CHECKMATE         -> "Checkmate! Game over";
-            case STALEMATE         -> "Stalemate! Game is a draw";
-        };
+        return GameController.resultMessage(game, result);
     }
 
-    private String modeName(GameMode mode) { return GameRegistry.defaultRegistry().displayName(mode); }
-    private String formatPieceDetail(Map<Character, Integer> detail) {
-        if (detail == null || detail.isEmpty()) return "none";
-        StringBuilder sb = new StringBuilder();
-        char[] order = {'K', 'Q', 'R', 'B', 'N', 'P'};
-        for (char t : order) {
-            Integer n = detail.get(t);
-            if (n != null) sb.append(n).append(typeSymbol(t)).append(" ");
+    private Set<Position> validMovesFor(GameSession game) {
+        return GameController.validMovesFor(game);
+    }
+
+    private Color statusColor(GameSession game, String line) {
+        if (game instanceof ChessSession chess && line.startsWith("To move:")) {
+            return chess.current() == Disc.WHITE ? WHITE_TURN : BLACK_TURN;
         }
-        return sb.toString().trim();
+        if (line.contains("Won")) {
+            return SUCCESS;
+        }
+        if (line.contains("game over") || line.contains("Lost") || line.contains("Finished")) {
+            return WARNING;
+        }
+        if (line.startsWith("Turn:")) {
+            return line.contains("White") ? WHITE_TURN : BLACK_TURN;
+        }
+        return FG;
     }
-    private String typeSymbol(char type) {
-        return switch (type) {
-            case 'K' -> "\u265A";
-            case 'Q' -> "\u265B";
-            case 'R' -> "\u265C";
-            case 'B' -> "\u265D";
-            case 'N' -> "\u265E";
-            case 'P' -> "\u265F";
-            default -> String.valueOf(type);
+
+    private Color stateColor(GameSession game) {
+        if (!game.isOver()) {
+            return SUCCESS;
+        }
+        if (game instanceof MinesweeperSession ms && ms.lastMessage().contains("win")) {
+            return SUCCESS;
+        }
+        return WARNING;
+    }
+
+    private String stateText(GameSession game) {
+        if (game instanceof MinesweeperSession ms && ms.isOver()) {
+            return ms.lastMessage().contains("win") ? "Won" : "Lost";
+        }
+        return game.isOver() ? "Over" : "Live";
+    }
+
+    private String turnText(Disc disc) {
+        return disc == Disc.BLACK ? "Black to move" : "White to move";
+    }
+
+    private String modeName(GameMode mode) {
+        return manager.registry().displayName(mode);
+    }
+
+    private String displayMode(GameMode mode) {
+        String name = modeName(mode);
+        if (name == null || name.isBlank()) {
+            return "";
+        }
+        return name.substring(0, 1).toUpperCase() + name.substring(1);
+    }
+
+    private String pos(Position p) {
+        return (p.row() + 1) + String.valueOf((char) ('a' + p.col()));
+    }
+
+    private static String buttonStyle(ButtonTone tone) {
+        Color background = switch (tone) {
+            case PRIMARY -> Color.web("#3a2b1d");
+            case DANGER -> Color.web("#33201c");
+            case SECONDARY -> SURFACE_2;
         };
+        Color border = switch (tone) {
+            case PRIMARY -> Color.web("#6b4c2d");
+            case DANGER -> DANGER_COLOR;
+            case SECONDARY -> BORDER;
+        };
+        Color text = switch (tone) {
+            case DANGER -> Color.web("#ffd5d7");
+            default -> FG;
+        };
+        return panelStyle(background, border, 4)
+            + "-fx-text-fill: " + hex(text) + ";"
+            + "-fx-padding: 8 12 8 12;";
     }
-    private String chessTurn(GameSession g) {
-        if (g.isOver()) return "-";
-        return g.current() == Disc.WHITE ? "White (lowercase)" : "Black (UPPERCASE)";
+
+    private static String panelStyle(Color background, Color border, int radius) {
+        return "-fx-background-color: " + hex(background) + ";"
+            + "-fx-background-radius: " + radius + ";"
+            + "-fx-border-color: " + hex(border) + ";"
+            + "-fx-border-radius: " + radius + ";"
+            + "-fx-border-width: 1;";
     }
-    private String discName(Disc d) { return d == Disc.BLACK ? "Black" : "White"; }
-    private String pos(Position p)  { return (p.row() + 1) + String.valueOf((char) ('a' + p.col())); }
+
+    private static String boardShellStyle(GameSession game) {
+        if (game instanceof ChessSession) {
+            return panelStyle(Color.web("#24201b"), Color.web("#6f4e2e"), 4)
+                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 14, 0.18, 0, 5);";
+        }
+        if (game instanceof MinesweeperSession) {
+            return panelStyle(Color.web("#2a2a2a"), Color.web("#8a8a8a"), 3)
+                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.28), 10, 0.16, 0, 4);";
+        }
+        return panelStyle(Color.web("#182018"), Color.web("#2f7537"), 4)
+            + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.32), 12, 0.18, 0, 4);";
+    }
+
+    private static String hex(Color color) {
+        return String.format("#%02X%02X%02X",
+            (int) (color.getRed() * 255),
+            (int) (color.getGreen() * 255),
+            (int) (color.getBlue() * 255));
+    }
+
+    private enum ButtonTone {
+        PRIMARY,
+        SECONDARY,
+        DANGER
+    }
+
 }

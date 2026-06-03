@@ -1,7 +1,7 @@
 package reversi.command;
 
-import reversi.core.GameMode;
-import reversi.core.Position;
+import reversi.core.model.GameMode;
+import reversi.core.model.Position;
 import reversi.gamehall.GameRegistry;
 
 import java.util.Locale;
@@ -12,6 +12,10 @@ public final class CommandParser {
     }
 
     public static ParsedCommand parse(String input) {
+        return parse(input, GameRegistry.defaultRegistry());
+    }
+
+    public static ParsedCommand parse(String input, GameRegistry registry) {
         if (input == null) {
             return ParsedCommand.invalid("");
         }
@@ -34,7 +38,7 @@ public final class CommandParser {
         if (normalized.equals("pass")) {
             return ParsedCommand.pass(input);
         }
-        Optional<GameMode> mode = GameRegistry.defaultRegistry().findByCommand(normalized)
+        Optional<GameMode> mode = registry.findByCommand(normalized)
             .map(plugin -> plugin.mode());
         if (mode.isPresent()) {
             return ParsedCommand.newGame(mode.get(), input);

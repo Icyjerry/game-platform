@@ -1,0 +1,4 @@
+reversi.games.peace.PeaceGamePlugin
+reversi.games.reversi.ReversiGamePlugin
+reversi.games.minesweeper.MinesweeperGamePlugin
+reversi.games.chess.ChessGamePlugin

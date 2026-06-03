@@ -1,7 +1,7 @@
 package reversi.command;
 
-import reversi.core.GameMode;
-import reversi.core.Position;
+import reversi.core.model.GameMode;
+import reversi.core.model.Position;
 
 public record ParsedCommand(
     CommandType type,

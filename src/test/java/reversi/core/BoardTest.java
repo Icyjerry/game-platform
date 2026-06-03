@@ -1,11 +1,19 @@
 package reversi.core;
 
+import reversi.core.model.*;
+import reversi.games.chess.ChessGame;
+import reversi.games.minesweeper.MinesweeperGame;
+import reversi.games.reversi.ReversiGame;
+
 import org.junit.jupiter.api.Test;
 import reversi.command.CommandParser;
 import reversi.command.CommandType;
 import reversi.command.ParsedCommand;
 import reversi.gamehall.DemoController;
+import reversi.gamehall.GameController;
 import reversi.gamehall.GameRegistry;
+import reversi.gamehall.MultiGameManager;
+import reversi.gamehall.UiRegistry;
 
 import java.util.Map;
 import java.util.Random;
@@ -13,6 +21,7 @@ import java.util.Random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BoardTest {
@@ -26,7 +35,7 @@ class BoardTest {
 
     @Test
     void reversiMoveFlipsCapturedDisc() {
-        Game game = Game.newGame(8);
+        ReversiGame game = ReversiGame.newGame(8);
 
         ActionResult result = game.tryMove(new Position(2, 3));
 
@@ -60,8 +69,25 @@ class BoardTest {
     }
 
     @Test
+    void managerCanResetCurrentGameWithoutChangingSlot() {
+        MultiGameManager manager = new MultiGameManager(8);
+        manager.switchTo(1);
+        ReversiGame before = (ReversiGame) manager.activeGame();
+        assertEquals(ActionResult.OK, before.tryMove(new Position(2, 3)));
+
+        assertTrue(manager.resetActiveGame());
+
+        assertEquals(4, manager.totalGames());
+        assertEquals(1, manager.activeIndex());
+        assertEquals(GameMode.REVERSI, manager.activeGame().mode());
+        ReversiGame after = (ReversiGame) manager.activeGame();
+        assertEquals(2, after.counts().get(Disc.BLACK));
+        assertEquals(2, after.counts().get(Disc.WHITE));
+    }
+
+    @Test
     void passIsRejectedWhenCurrentPlayerHasLegalMoves() {
-        Game game = Game.newGame(8);
+        ReversiGame game = ReversiGame.newGame(8);
 
         ActionResult result = game.tryPass();
 
@@ -71,7 +97,7 @@ class BoardTest {
 
     @Test
     void passIsAllowedWhenCurrentPlayerHasNoLegalMoves() {
-        Game game = Game.newGame(4);
+        ReversiGame game = ReversiGame.newGame(4);
         Board board = game.board();
 
         board.place(new Position(0, 1), Disc.BLACK);
@@ -88,6 +114,8 @@ class BoardTest {
 
         assertTrue(game.validMoves().isEmpty());
         assertFalse(game.validMoves(Disc.WHITE).isEmpty());
+        assertEquals("No legal moves. Type pass",
+            GameController.resultMessage(game, ActionResult.INVALID_MOVE));
 
         ActionResult result = game.tryPass();
 
@@ -98,7 +126,7 @@ class BoardTest {
 
     @Test
     void gameEndsWhenNeitherPlayerHasLegalMoves() {
-        Game game = Game.newGame(4);
+        ReversiGame game = ReversiGame.newGame(4);
         Board board = game.board();
 
         board.flip(new Position(1, 2));
@@ -152,6 +180,11 @@ class BoardTest {
     }
 
     @Test
+    void uiRegistryRejectsUnknownUiName() {
+        assertThrows(IllegalArgumentException.class, () -> UiRegistry.discover("missing-ui"));
+    }
+
+    @Test
     void demoControllerExecutesScriptAndSwitchesGames() {
         MultiGameManager manager = new MultiGameManager(8);
         DemoController controller = new DemoController(manager);
@@ -159,7 +192,8 @@ class BoardTest {
 
         String firstMessage = controller.tick(0);
         assertTrue(firstMessage.contains("DEMO MODE"));
-        assertTrue(manager.activeGame().counts().values().stream().mapToInt(Integer::intValue).sum() > 0);
+        BoardGameSession active = (BoardGameSession) manager.activeGame();
+        assertTrue(active.counts().values().stream().mapToInt(Integer::intValue).sum() > 0);
 
         // Run demo until first game completes
         int maxSteps = 200;
